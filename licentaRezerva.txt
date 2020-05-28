@@ -1,0 +1,848 @@
+\newcommand{\argmin}{\operatornamewithlimits{argmin}}
+\chapter{Analiza supervizata}
+Prima parte a acestui capitol se va focusa asupra clusterului \textcolor{orange}{portocaliu} din figura [\ref{fig:DBSCAN}]. Asa cum am spus anterior, majoritatea jucatorilor din aceasta partitie au terminat meciul pe un loc slab, observatie furnizata vizual prin urmatoarea histograma:
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=12cm, height=6cm]{images/PlayersClusterAdaHisto.JPG}
+    \caption{Locurilor ocupate la finalul meciului de jucatorii din clusterul portocaliu}
+    \label{fig:histoForAda}
+\end{figure}
+Avand in vedere majoritatea clara de observatii (eng. \textit{samples}) care nu sunt in top 10, ne putem gandi la un algoritm rapid, ca timp, ce va atribui pe scara larga eticheta 0. In acest sens, m-am gandit la un \textbf{Arbore de decizie} (eng. \textit{Decision Tree}) din urmatoarele considerente:\\
+$\checkmark$ Este usor de interpretat si ofera informatii esentiale cu privire la granitele (eng. \textit{tresholds}) pe care algoritmul le considera importante\\
+$\checkmark$ Trateaza usor atributele irelevante pe care le inlatura la fiecare nod, dar le reconsidera in iteratiile urmatoare\\
+$\checkmark$ Poate suporta valorile lipsa intrucat lucreaza cu intervale (atributele noastre sunt continue, deci pragurile de separare sunt de ordin comparativ)\\
+$\checkmark$ Foarte rapid la testare, complexitatea fiind de $O(adancime)$
+
+\par{} Una dintre problemele principale aduse de un astfel de algoritm este \textbf{\textit{overfitting-ul}}, fenomen caracterizat printr-o specificacitate prea ridicata a modelui vis-a-vis de setul de antrenament. Un arbore construit cu o adancime maxima are sanse mari de a deveni prea particular. Acest efect este evitat, in general, prin operatia de \textit{\textbf{retezare}} (eng. \textit{prunning}) a nivelelor. Am aflat adancimea maxima a arborelui de decizie complet iar apoi, din acesta, am taiat pe rand cate un nivel pana cand am ajuns la un compas de decizie (eng. \textit{decision stump}). Pentru fiecare arbore retezat am aplicat \textbf{\textit{validare incrucisata leave one out (sau CVLOO)}} cu scopul de a alege drept arbore final pe acela a carui eroare la validare este minima. In urma acestei proceduri, am obtinut un arbore de decizie optim de adancime 4 cu urmatoarea matrice de confuzie:  
+
+\begin{center}
+\begin{tabular}{l|l|c|c|c}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Realitate}&\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Negativ&Pozitiv\\
+\cline{2-4}
+\multirow{2}{*}{Predictie}& Negativ & $6572$ & $132$ \\
+\cline{2-4}
+& Pozitiv & $1$ & $15$\\
+\cline{2-4}
+\end{tabular}
+\end{center}
+
+Desi intrarile cu etichete nule sunt prezise corect in proportie de aprope 100\%, celelalte sunt clasate in mod eronat intr-un numar foarte mare. Fenomenul de \textbf{\textit{underfitting}} este cel cu care ne confruntam acum. Modelul nu beneficiaza de destule informatii relevante cu privire la jucatorii din top 10 (sau informatile despre ei nu au un caracter predictibil), motiv pentru care esueaza in a-i categoriza corect. O strategie cunoscuta, menita sa combata un astfel de comportament este \textbf{\textit{Boosting-ul}}.
+
+\section{AdaBoost}
+\textbf{\textit{Boosting-ul}} este o metoda de tip ansamblu (eng. \textit{ensemble learning}) care imbina mai multi clasificatori slabi (eng. \textit{weak classifiers}), adica predictori putin mai buni decat alegerea la intamplare, intr-un singur algoritm robust.  
+Unul dintre cei mai folositi algoritmi de boosting este cel care da numele sub-sectiunii. Am ales \textbf{\textit{AdaBoost}} deoarece se adapteaza bine la atribute continue si converge relativ repede la un optim datorita functie de pierdere (eng. \textit{loss function}) de tip exponentiala. Mai mult, rezultatul predictiei este dat de o combinatie liniara a tuturor clasificatorilor slabi si ponderile asociate, interpretabilitatea erorilor devenind usoara intrucat e de ajuns sa ne uitam la impactul fiecarui \textit{weak classifier} pentru a stabili unde este problema. Mai jos implementarea \cite{AdaBoost}: \\ 
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{Algorim:} AdaBoost\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{\underline{INITIALIZARE}}\\
+\textit{$w_i^1 = \frac{1}{n}$, \quad $\forall i= \widebar{1,n}$}\\
+\textbf{\underline{CORP ITERATIV}}\\
+\textit{pentru $t \gets 1,...,T$} 
+\par{} $\rightarrow$ \textit{aplica un clasificator slab $h^t$ pe date}
+\par{}  $\rightarrow$  $\epsilon^t$=$\sum\limits_{\substrack{i=1}}^{n} w_i^t | y^i \neq h^t(x^i)$ \quad \quad \quad \quad \quad \quad \quad \textbf{eroare ponderata}
+\par{} $\rightarrow$ $\alpha^t$=$\eta \cdot ln{\frac{1-\epsilon^t}{\epsilon^t}}$ \quad \quad \quad \quad \quad \quad \quad \quad \quad \quad \textbf{pondere clasificator slab}
+\par{} $\rightarrow$ \textit{$w_i^{t+1}=\frac{1}{Z^t} \cdot w_i^t \cdot e^{-\alpha^t \cdot y^i \cdot h^t(x^i)}$}, \quad $\forall i= \widebar{1,n}$\\
+\textbf{\underline{PREDICTIE}}\\
+$H^t(z)=sgn(\sum\limits_{\substrack{t=1}}^{T} \alpha^t \cdot h^t(z))$\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+Numarul de clasificatori slabi si rata rata de invatare $\eta$ (eng. \textit{learning rate}) sunt parametrii de care depinde algoritmul. Un ansamblu dens, cu multi clasificatori slabi, este de preferat deoarece ofera un spatiu de cautare mare. Totusi, rata de invatare este primordiala intrucat ea stabileste ponderea fiecarui \textit{weak classifier}. Prin urmare, exista un compromis (eng. \textit{trade-off}) intre aceste 2 variabile iar felul in care alegem valorile optime este esential. In acest sens, am aplicat o tehnica cunoscuta, numita \textbf{\textit{Randomized Grid-Search}}. Ea presupune rularea unui algoritm de mai multe ori, cu valori ale \textit{hyper-parametrilor} (parametrii de care depinde modelul) luate dintr-un interval specific. La fiecare iteratie avem o pereche de \textit{hyper-parametri} noua. Optimalitatea modelului se masoara cu o metrica specificata de utilizator. In cazul meu, am folosit acuratetea echilibrata (eng. \textit{Balanced Accuracy}). De asemenea, in cadrul implementarii din \textit{scikit}, functia de \textit{Grid-Search} realizeaza si \textbf{\textit{validarea incrucisata de tip 5-fold}} pentru fiecare iteratie. Pentru a reduce si mai mult din particularitatea unei perechi de parametri, validarea incrucisata este facuta de 3 ori, la final calculandu-se media scorurilor obtinute pe seturile de test.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=12cm, height=1.5cm]{images/GridSearch.JPG}
+    \caption{Valorile optime pentru parametrii algoritmului AdaBoost}
+    \label{fig:GridSearch}
+\end{figure}
+Daca rulam acum AdaBoost pe setul de antrenament specific clusterului \textcolor{orange}{portocaliu} obtinem urmatoarea matrice de confuzie:
+
+\begin{center}
+\begin{tabular}{l|l|c|c|c}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Realitate}&\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Negativ&Pozitiv\\
+\cline{2-4}
+\multirow{2}{*}{Predictie}& Negativ & $5888$ & $7$ \\
+\cline{2-4}
+& Pozitiv & $685$ & $140$\\
+\cline{2-4}
+\end{tabular}
+\end{center}
+A se observa ca, in cazul etichetelor nule, acuratetea a scazut in detrimentul clasificarii mai bune a intrarilor pozitive. Ramane de vazut cum se va comporta algoritmul pe datele de test, dar mai intai trebuie sa stabilim care sunt observatiile ce pot fi prezise cu tehnica descrisa pana acum. Acest lucru implica gasirea celor \textit{minPts} vecini din \textit{training\_set} ai fiecarui \textit{sample} din \textit{test\_set}. Daca mai mult de 95\% dintre vecinii unei observatii sunt din clusterul \textcolor{orange}{portocaliu}, o putem incadra ca fiind viabila pentru AdaBoost. Astfel, am descoperit ca 6728 de intrari pot fi clasificate cu o metoda de Boosting.
+
+\begin{figure}[h!]
+    \centering
+    \subfigure[a]{\includegraphics[width=0.47\textwidth]{images/AdaboostStats.JPG}} 
+    \subfigure[b]{\includegraphics[width=0.46\textwidth]{images/PRECISIONRECALL.JPG}} 
+    \caption{(a) Statistici AdaBoost (b) Graful Precision-Recall K-means pe date}
+    \label{fig:FiguriAdaBoost}
+\end{figure}
+
+Am facut o modificare la graficul \textit{\textbf{ROC}}, inlocuind \textit{False Positive Rate-ul}, de pe axa Ox, cu \textit{Precision}. \textit{FPR}-ul nu este influentat de un set de date inegal (eng. \textit{unbalanced set}) intrucat nu include \textit{TN(True Negatives)}, deci graficul este mai explicativ. 
+
+\section{Al doilea set de test}
+Asa cum am mentionat in capitolele anterioare, cel de-al doilea set de test este relativ mai echilibrat. Numara 5946 de observatii dintre care pozitive, 1056, iar nule, 4890. Aici nu vom mai aplica reducerea dimensiunilor (datele sunt evident din celelalte 2 clustere), ci vom lasa caracteristicile in forma data de operatia de standardizare. Majoritatea jucatorilor din top 10 se afla la aceasta sub-sectiune, deci clasarea lor corecta are o pondere mai mare in momentul alegerii modelului ideal. Este cadrul de date (eng. \textit{Dataframe}) pe care investitorii/sponsorii sau pariorii il urmaresc pentru a se hotara asupra unei investii. Accentul principal va fi in pus pe acesta sectiune!
+
+\subsection{Naive Bayes}
+In urma unei analize a datelor, am descoperit ca 3 dintre atribute (\textit{'damageDealt', 'walkDistance',  'weaponsAcquired'}) au distributiile specifice histogramelor asociate foarte asemanatoare cu cele \textbf{\textit{Normale/Gaussiene}}. Din acest motiv, un model \textbf{\textit{Naive Bayes}} (presc. \textit{NB}) bazat pe \textit{atribute continue} ar putea fi un predictor puternic atat din punct de vedere a timpului de executie, cat si a acuratetii.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=14cm, height=8cm]{images/GMMNaiveBayesHistos.JPG}
+    \caption{Histogramele atributelor in functie de etichete}
+    \label{fig:GMMNBHistos}
+\end{figure}
+
+Eficienta timp este data de \textit{supozitia de independenta conditionala a unui atribut fata de altul, in raport cu eticheta}. Aceasta presupunere reduce numarul de estimari de probabilite pe care o distributie corelata le face. Practic, daca in mod normal ar trebui sa se realizeze $2^{n+1}+1$ operatii de estimare, acum e nevoie doar de $2n+1$ (n=numarul de atribute). NB este un model generativ liniar care ia decizii in felul urmator:
+$$\operatorname*{argmax}_{Y \in \{0,1\}} P(Y|X) = \operatorname*{argmax}_{Y \in \{0,1\}} \frac{p(X|Y)P(Y)}{p(X)} = \operatorname*{argmax}_{Y \in \{0,1\}} p(X|Y)P(Y) = \operatorname*{argmax}_{Y \in \{0,1\}} (\prod_{i=1}^{n}p(X_i|Y))P(Y)$$ unde $X=[X_1,..,X_n]^T$, \quad $P(X_i|Y) \sim \mathcal{N}_Y^i(\mu, \sigma^2)$ \quad $\forall i= \widebar{1,n}$
+
+\par{} La antrenare am aplicat validare incrucisata pentru a ma asigura ca algoritmul nu face overfitting. De aceasta data, tehnica a fost una diferita, alegand sa impart setul de antrenament in 90\% date \textit{train} si 10\% date \textit{validare}, de 100 de ori. Obtinem o viziune mult mai exacta daca esantionam atat de des, pentru dimensiuni diferite ale seturilor de \textit{train} si \textit{test}. Cu alte cuvinte, urmam exact pasii specifici liniei de invatare (eng. \textbf{\textit{Learning Curve}}), o metrica ce raspunde la intrebarea \textit{\textbf{"Devine un model mai bun daca invata mai mult?"}}.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=10cm, height=8cm]{images/LearningCurveNB.JPG}
+    \caption{Graficul Learning Curve in cazul Naive Bayes}
+    \label{fig:LearningCurveNB}
+\end{figure}
+
+O pereche \textcolor{red}{rosu} - \textcolor{cadmiumgreen}{verde} de puncte in aceeasi pozitie identifica acuratetea (in medie) la antrenare, respectiv validare a unui set format din atatea observatii cate arata coordonata Ox. Umbrele (eng. \textit{shades}) ce cuprind liniile sunt deviatiile de la medie a celorlalte esantioane. Ambele linii sunt foarte apropiate, sugerand faptul ca Naive Bayes nu face overfiting, iar intervalele de deviatie mici atesta un comportament previzibil al algoritmului. De asemenea, modelul se stabilizeaza de la un numar de observatii incolo, indicand un grad de incredere ridicat in momentul unei predictii.
+\par{} Alt aspect important de care se tine cont la antrenarea unui model este \textbf{\textit{Scalabilitatea}}. Partea de \textit{training} tinde sa ocupe foarte mult timp in cadrul unei analize de \textit{Data Mining}, lucru care in practica cauzeaza pierderi financiare majore la produsele software. In cazul de fata, suntem in egala masura interesati de viteza, cat si de acuratete. Pentru a raspunde ambelor cerinte, am efectuat inca 2 grafice explicative din care reies urmatoarele rezultate: \\
+$\checkmark$ NB este rapid in raport cu numarul de observatii, dar oscileaza mult in functie de esantion (deviatie care totusi nu deranjeaza, fiind de ordinul milisecundelor)\\
+$\checkmark$ Performanta modelului stagneaza dupa un anumit timp de antrenare (fapt evident deoarece la un moment dat nu mai invata date utile si doar consuma secunde; chiar daca are observatii in plus, ele tind sa se repete)
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=16cm, height=8cm]{images/ScalabilityNB.JPG}
+    \caption{Scalabilitatea si performanta Naive Bayes}
+    \label{fig:ScalabilityNB}
+\end{figure}
+
+La nivel de statistici avem rezumatul (eng. \textit{metric summary}) de mai jos:
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=12cm, height=5cm]{images/GaussianNaiveBayes.JPG}
+    \caption{Rezumatul statisticilor Naive Bayes}
+    \label{fig:NBStats}
+\end{figure}
+
+Desi \textbf{\textit{acuratetea generala}} este una buna, etichetele pozitive sunt clasificate corect intr-un numar prea mic, asa cum indica \textbf{\textit{recall-ul}} de 37\%. Cu alte acuvinte, doar 37 de procente din cele 1056 observatii de \textbf{\textit{suport}} au tag-ul corespunzator. Totusi, \textbf{\textit{precizia}} de 69\% cu care intrarile (eng. \textit{entries}) din top 10 sunt prezise e una  relativ buna. Investitorii pot fi destul de siguri ca predictia algoritmului pentru cei din top 10 este una fondata pe adevar, si nu pe un proces aleator. Doar 31\% ar pierde bani de pe seama jucatorilor. \textit{\textbf{Precizia}} este sinonima cu \textit{\textbf{increderea}} iar o rata mare a acesteia atrage mai multe investitii deoarece oamenii vad potentialul de castig. Doua observatii principale pot fi formulate:
+
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item \textit{\textbf{Senzitivitatea}} modelului este importanta pentru dezvoltatori intrucat ei isi doresc cat mai multi jucatori corect prezisi in top 10 
+\item \textit{\textbf{Prezicia}} modelului este importanta pentru investitori intrucat le ofera increderea ca investitiile au sanse mari de a fi alocate jucatorilor ce vor termina in top 10 
+\end{description}
+\begin{center}
+\begin{tabular}{l|l|c|c|c}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Precizie}&\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Mica&Mare\\
+\cline{2-4}
+\multirow{2}{*}{Senzitivitate}& Mica & model slab & investitii mai putine, dar mari \\
+\cline{2-4}
+& Mare & investitii mai multe, dar mici & model ideal\\
+\cline{2-4}
+\end{tabular}
+\end{center}
+\\
+In cazul \textit{\textbf{specificacitatii}} de 96\% si a \textbf{\textit{NPV}} de 88\% e nevoie de o crestere a \textbf{\textit{NPV}}.  
+
+\subsection{Regresie Logistica}
+
+Am ales \textit{Regresia Logistica} drept urmatorul clasificator datorita legaturii puternice a acestuia cu \textit{Naive Bayes}. Daca \textit{NB} este un model \textbf{generativ} ce calculeaza distributiile $P(X|Y)$ si $P(Y)$, estimand parametrii lor, \textit{Regresia Logistica} este echivalentul \textbf{discriminativ} care estimeaza in mod direct parametrii distributiei $P(Y|X)$. Totusi, echivalenta este reala doar \textbf{atunci cand prezumptia de independenta conditionala este adevarata}. O astfel de ipoteza ne-ar conduce spre rezultate foarte asemanatoare ale celor 2 algoritmi, mai ales daca setul de antrenament contine multe date a caror distributii vor tinde spre cele reale. Daca prezumtia nu este adevarata, \textit{RL} va da predictii mai bune.
+\par{} Ca si timp de executie, etapa de antrenare a regresiei logistice ar putea dura mai mult, in functie de rata de invatare (eng. \textit{learning rate}) a gradientului descendent (eng. \textit{Gradient Descent}) sau a numarului de parametri. Graficul de scalabilitate ne va da mai multe informatii.
+\par{} Mai jos prezint "scurtatura" (eng. \textit{trick}) pentru a ajunge de la \textit{NB} la \textit{RL} si rata de invatare, scalabilitatea si performanta algoritmului:
+
+$$ P(Y=1|X) = \frac{P(X|Y=1)P(Y=1)}{P(X|Y=1)P(Y=1)+P(X|Y=0)P(Y=0)} = \frac{1}{1 + \frac{P(X|Y=0)P(Y=0)}{P(X|Y=1)P(Y=1)}} =$$  
+
+$$=\frac{1}{1+\frac{(\prod_{i=1}^{n}p(X_i|Y=0))P(Y=0)}{(\prod_{i=1}^{n}p(X_i|Y=1))P(Y=1)}} =\frac{1}{1+e^{ln(\prod_{i=1}^{n}\frac{p(X_i|Y=0)}{p(X_i|Y=1)})\frac{P(Y=0)}{P(Y=1)}}}=\frac{1}{1+e^{ln(\prod_{i=1}^{n}\frac{p(X_i|Y=0)}{p(X_i|Y=1)})+ln( \frac{P(Y=0)}{P(Y=1)} )}}=$$
+$$p(X_i|Y=0) \sim \mathcal{N}(\mu_i_0, \sigma_i_0^2), p(X_i|Y=1) \sim \mathcal{N}(\mu_i_1, \sigma_i_1^2), \sigma_i_0^2=\sigma_i_1^2=\sigma_i^2, \pi=P(Y=1)$$
+$=\frac{1}{1+e^{ln{\frac{1-\pi}{\pi}} + \sum_{i=1}^{n} \frac{2X_i(\mu_i_0-\mu_i_1)+\mu_1^2-\mu_i_0^2}{2\sigma_i^2}}} = \frac{1}{1+e^{ln{\frac{1-\pi}{\pi}} + \sum_{i=1}^{n} \frac{\mu_i_0-\mu_i_1}{\sigma_i^2}X_i + \frac{\mu_1^2-\mu_i_0^2}{2\sigma_i^2}}} = \frac{1}{1+e^{ln{\frac{1-\pi}{\pi}} + \sum_{i=1}^{n}\frac{\mu_1^2-\mu_i_0^2}{2\sigma_i^2} + \sum_{i=1}^{n} \frac{\mu_i_0-\mu_i_1}{\sigma_i^2}X_i}}$
+\\
+\newline
+$= \frac{1}{1+e^{w_0+\sum_{i=1}^{n}w_iX_i}} = \sigma(w^TX)$
+
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=18cm, height=6cm]{images/LogisticRegressionScalability.JPG}
+    \caption{Performanta regresiei logistica}
+    \label{fig:NBStats}
+\end{figure}
+
+La antrenare am aplicat exact aceeasi tehnica de validare incrucisata ca la \textit{Naive Bayes}, avand 90\% date \textit{train} si 10\% date \textit{validare}. Primul grafic este aproape identic cu cel de la figura [\ref{fig:LearningCurveNB}], diferenta fiind data de acuratetea putin mai buna a regresiei. Comportamentul acesteia este, asadar, echivalent cu \textit{NB} iar prezumtia de mai sus, adevarata. Scalabilitatea \textit{LR}, desi mai putin oscilanta, scade, dovada ca metoda gradientului descendent este costisitoare. La nivel de statistici, obtinem o mica crestere: 
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=10cm, height=5.5cm]{images/LogRegStats.JPG}
+    \caption{Performanta regresiei logistica}
+    \label{fig:NBStats}
+\end{figure}
+
+\textit{\textbf{Recall-ul}} a scazut cu 7 procente, dar \textit{\textbf{precizia}} este acum de 80\%. Din punctul de vedere al investitorului, regresia logistica e cel mai bun model, oferindu-i increderea necesara. Totodata, \textit{\textbf{specificacitatea}} creste putin, indicand o mai buna detectie a jucatorilor slabi.
+
+\subsection{Legatura dintre Naive Bayes si EM}
+
+Asa cum arata histogramele din figura [\ref{fig:GMMNBHistos}], anumite atribute par sa aiba date generate de \textbf{2 distributii normale}. In acest sens, o optimizare a algoritmului \textit{Naive Bayes} este evident necesara. Ideea este ca acolo unde se pot distinge vizual 2 distributii, sa se stabileasca mediile $\mu_1$, $\mu_2$ pentru ca mai apoi sa fie rulat algoritmul de \textbf{\textit{Expectation Maximization}} (eng. \textit{EM}) pentru mixturi de modele Gaussiene. Vectorul de medii returnat va fi folosit la calculul functiilor de densitate-probabilitate (pdf) iar observatiile vor fi asociate distributiilor pentru care se obtin valori mai mari ale pdf. Algoritmul \textbf{\textit{EM}} este urmatorul:\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{Algorim:} EM-GMM\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{\underline{INITIALIZARE}}\\
+\textit{Se initializeaza vectorul de medii $\mu = [\mu_1, \mu_2]^T$}\\
+\textbf{\underline{CORP ITERATIV (\textcolor{orange}{Pasul Estimativ, Pasul Maximizator}) }}\\
+\textit{pentru $t \gets 1,...,max\_iter$}
+\par{} \textit{pentru fiecare $x^i$ din training\_set\_2}
+\par{} \quad $E[Z^i_j]=\frac{p(x^i|Z^i_j=1,\mu_j)}{\sum\limits_{\substrack{l=1}}^{2} p(x^i|Z^i_l=1, \mu_l)}=\frac{e^{-\frac{(x^i-\mu_j)^2}{2\sigma^2}}}{\sum\limits_{\substrack{l=1}}^{2} e^{-\frac{(x^i-\mu_l)^2}{2\sigma^2}}}$
+\par{} \textit{pentru $j \gets 1,...,2$}
+\par{} \quad $\mu_j = \frac{\sum\limits_{\substrack{i=1}}^{n}
+E[Z^i_j]x^i}{\sum\limits_{\substrack{i=1}}^{n} E[Z^i_j]}$
+\\
+\textbf{\underline{REZULTAT}}\\
+\textit{Returneaza vectorul $\mu=[\mu_1, \mu_2]^T$}\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+Fiecare componenta are propria sa varianta, mediile sunt initializate manual de catre mine iar \textit{max\_iter} reprezinta numarul maxim de iteratii ale algoritmului, si anume, 100 (prag specificat de mine). Daca convergenta este atinsa mai devreme, implementarea din \textit{scikit} se opreste inainte de 100.\\
+Atributele pe care am aplicat tehnica descrisa mai sus sunt: \textit{damageDealt} (atat pentru top 10, cat si in afara lui), \textit{walkDistance} (doar pentru cei din top 10) si \textit{weaponsAcquired} (atunci cand jucatorii nu sunt in top 10). In total, avem 9 distributii pentru cele 3 caracteristici din set. Cu ajutorul acestora se vor calcula probabilitatile necesare algoritmului \textit{Naive Bayes}. Statisticile hibridului sunt:
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=10cm, height=5.5cm]{images/EMGMMStats.JPG}
+    \caption{Performanta Naive Bayes cu modele de mixturi Gaussiene}
+    \label{fig:NBStats}
+\end{figure}
+
+Din seria tehnicilor de clasificare aplicate pana acum, aceasta se comporta cel mai bine, daca ar fi sa ne raportam la \textbf{\textit{acuratetea echilibrata}}. De asemenea, \textit{\textbf{senzitivitatea}} pe eticheta pozitiva a crescut substantial, lucru ce indica predictia corecta a unui numar mai mare de jucatori care au terminat in top 10. Din pacate, \textbf{\textit{precizia}} cu care sunt clasati competitorii de top a scazut la jumatate. Ne aflam pe linia a doua, prima coloana din tabelul de la pagina 33: investitii multe, dar mici. O observatie interesanta se poate face asupra \textbf{\textit{NPV-ului}} de 96\%. Practic, investitorilor le este aproape garantat ca cei prezisi in afara top 10, chiar sunt exclusi de pe podium. Desi \textbf{\textit{specificacitatea}} a scazut, siguranta cu care sunt prezise etichetele nule este ideala.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\chapter{Analiza nesupervizata}
+
+Avand in vedere ca datele din setul de antrenament au fost prelucrate corespunzator, invatarea nesupervizata poate incepe. In urma operatiilor descrise in paginile anterioare, cadrul de date (eng. \textit{Data Frame}) arata in felul urmator (a se lua in vedere ca tabelul de mai jos surprinde primele 5 observatii dintr-un tabel de 11366): 
+\begin{center}
+\begin{tabular}{rrrr}
+\toprule
+     atr1 &      atr2 &      atr3 &  winPlacePerc \\
+\midrule
+ 0.700062 &  0.400335 & -0.472270 &            51 \\
+ 0.178045 & -0.808024 &  0.624001 &            48 \\
+ 0.294052 & -0.561770 &  0.711124 &            57 \\
+ 0.871228 &  0.101547 & -0.808441 &            33 \\
+-0.716307 &  1.225031 & -0.448755 &            90 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Prima coloana surpinde combinatia dintre atributele a caror culori pe dendograma de la [\ref{fig:dendograma}] sunt \textcolor{blizzardblue}{azur} si \textcolor{red}{rosu}, a doua coloana este singulara, specifica lui \textit{'killPlace'} iar a treia coloana  cuprinde atributele de culoare \textcolor{green}{verde}. Cele 3 dimensiuni sunt rezultatul aglomerarii de caracteristici (eng. \textit{Feature Agglomeration}) de la sectiunea \hyperref[subsec: diminuare]{2.3.4}. Ca scurta observatie, \textbf{'atr1'} poate fi vazut ca un atribut de lupta (eng. \textit{combat features}) intrucat inglobeaza statistici specifice iar \textbf{'atr3'} sumarizeaza valori de suport (eng. \textit{non-combat features}). Ne dorim ca pe tot parcursul analizei nesupervizate sa aflam mai multe informatii calitative ce ascund \textit{pattern-uri} nestiute in date.
+
+\subsection{K-means}
+Primul algoritm pe care l-am aplicat a fost \textbf{K-means}. Cunoscut drept un \textit{general purpose clustering algorithm}, este cea mai folosita tehnica de analiza a unui set mare de date. Este prima alegere (eng. \textit{firsthand option}) intrucat ofera o viziune de ansamblu asupra unor posibile sabloane. Algoritmul este unul simplu, descris in pseudocodul urmator:\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{Algoritm}: K-means\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{\underline{INITIALIZARE}}\\
+\textit{Alege numarul \textbf{K} de clustere dorite}\\
+\textit{Initializeaza centroizii $\mu^1, ..., \mu^k$ a celor \textbf{K} clustere cu observatii alese random}\\
+\textbf{\underline{CORP ITERATIV}}\\
+\textit{repeta}
+\par{}  $\rightarrow$ \textit{pentru $\forall x^i \in training\_set$ calculeaza $d(x^i, \mu^j)$, $j \in 1..K$}
+\par{} $\rightarrow$ \textit{asigneaza fiecare observatie $x^i$ clusterului $C^j$ pentru care $d(x^i, \mu^j)$ este minima}
+\par{} $\rightarrow$ \textit{recalculeaza centroizii $\mu^j = \frac{\sum_{e \in C^j} e}{|C^j|}$}\\
+\textit{cat timp o conditie este satisfacute}\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{K-means} urmareste minimizarea unui criteriu intitulat \textbf{suma patratelor erorilor} (eng. \textit{sum of squared errors sau SSE}), definit ca: $$\sum_{i=1}^{n} \min_{\mu^{j} \in C} ({|| x^i - \mu^j||}^2)$$
+Cu alte cuvinte, ne dorim clustere care sa minimizeze distantele dintre punctele membre si centroizii specifici. Acest scop este dependent de urmatoarele 2 observatii:
+
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item  Este nevoie de specificarea unui numar potrivit de K clustere care sa explice datele
+\item  Alegerea initiala a centroizilor are o pondere foarte mare, influentand atat timpul de executie, cat si convergenta la o partitionare optima
+\end{description}
+
+Avand doar un singur parametru ce trebuie specificat, si anume K, algoritmul poate alege valoarea ideala a acestuia in functie de SSE, prin metoda \textit{Elbow technique}. Ea presupune repetarea algorimtului cu valori diferite ale lui K si marcarea grafica a perechilor (K, SSE) pentru fiecare rulare. Tuplul cautat este varful de pe figura, care din punct de vedere vizual seamana cu un punct de cotitura.
+\par{} In mod normal, centroizii initiali sunt alesi la intamplare din randul instantelor de clusterizat. Daca datele sunt foarte bine separate atunci e posibil ca la finalul initializarii sa existe macar un cluster din care nu a fost selectat niciun centroid. Astfel, timpul de executie este mult mai mare iar, la final, riscam sa nu obtinem partitionarea dorita a datelor. Din aceste motive, initializarea centroizilor se va face prin \textbf{K-means++}, algoritm care incearca sa selecteze, drept centroizi, observatii care sunt cat mai distantate unele de altele. In felul acesta, exista o probabilitate mai mare de a selecta membri din toate clusterele. Mai jos este pseudocodul corespunzator:\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{Algorim:} K-means++\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{\underline{INITIALIZARE}}\\
+\textit{Stabileste numarul de clustere K dorite}\\
+\textit{Alege $\mu^1 = x^i$ in mod aleatoriu, cu probabilitate uniforma}\\
+\textbf{\underline{CORP ITERATIV}}\\
+\textit{pentru $j \gets 2,...,K$} 
+\par{}  $\rightarrow$  \textit{$\displaystyle D^i = \min_{j^{`} \in 1,..,j-1} {\| x^i - \mu^{j^{`}} \|}_2^2$}
+\par{} $\rightarrow$ $\displaystyle P(x^i) = \frac{D^i}{\sum\limits_{\substrack{l=1}}^{n} D^{l}}, \forall i=1,..,n$
+\par{} $\rightarrow$ \textit{alege $x^i$ in mod aleatoriu cu probabilitatea de mai sus si fixeaza $\mu^j = x^i$}\\
+\textbf{\underline{REZULTAT}}\\
+Returneaza $\mu={[\mu^1,..,\mu^k]}^T$\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+Algoritmul abia prezentat rezolva partial problema initializarii centroizilor. Caracterul este tot unul aleator, dar putem reduce si mai mult acest lucru prin rularea K-means de un numar specific de ori (100 in cazul nostru), de fiecare cu initializari diferite date de K-means++. Rezultatul optim este rularea care da cea mai mica inertie. 
+
+\begin{figure}[h!]
+    \centering
+    \subfigure[a]{\includegraphics[width=0.4\textwidth]{images/ElbowTechnique.JPG}} 
+    \subfigure[b]{\includegraphics[width=0.53\textwidth]{images/K-means.JPG}} 
+    \caption{(a) Valoarea optima K cu tehnica Elbow (b) Rezultate K-means pe date}
+    \label{fig:FiguriKMeans}
+\end{figure}
+Rezultatul este unul slab, un scor Silhouette mic si clustere suprapuse care nu par sa surprinda foarte bine forma datelor. Posibelele principale motive ce stau la baza esecului sunt senzitivitatea la valori extreme, distributia elongata a punctelor sau initializarile eronate. Totodata, densitatea mare semnaleaza nevoie unui alt algoritm.
+
+\subsection{DBSCAN}
+\textbf{DBSCAN} (eng. \textit{Density based spatial clustering algorithm of applications with noise}) este principala tehnica de partitionare aplicata seturilor de date a caror densitate este semnificativa. Un algoritm simplu si intuitiv care lucreaza cu vecinatatile punctelor pe care trebuie sa le clusterizeze. Avand 2 parametri principali: 
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item $\epsilon$ = raza maxima pe care se vor cauta vecini
+\item \textit{minPts} = numarul de puncte in $\epsilon$-vecinatatea unui punct 
+\end{description}
+DBSCAN impune concepte noi de clustere, construite in jurul acestor variabile. Astfel, un \textbf{"Core point"} este o observatie care pe o raza $\epsilon$ are minim \textit{minPts} vecini, un \textbf{"Border point"} este o observatie care pe o raza $\epsilon$ NU are minim \textit{minPts} puncte, dar se afla in jurul granitelor-$\epsilon$ ale unui "Core point" iar un \textbf{"Outlier"} este o observatie ce nu respecta niciuna din definitiile "Core point" sau "Border point".
+Notiunile anterioare definesc acum principiile pe care elementele unui cluster dens trebuie sa le respecte:
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item \textit{Accesibilitate directa} = un element Q este direct accesibil din P daca Q se afla in interiorul granitelor-$\epsilon$ ale "Core point-ului" P
+\item \textit{Accesibilitate} = Q este accesibil din P daca exista un drum $p_1,..,p_l$ unde $p_1=P$ si $p_l=Q$ si fiecare $p_{i+1}$ este accesibil direct din $p_{i}$
+\item \textit{Conexiune densa} = P si Q sunt conectate daca exista un element O astfel incat P si Q sunt accesibile din O
+\end{description}
+In continuare voi prezenta o lista cu cateva dintre avantajele si dezavantajele DBSCAN:
+$\checkmark$ Eficient pentru seturi mari de date\\
+$\checkmark$ Robust la valori extreme (eng. \textit{outliers})\\
+$\checkmark$ Se pliaza bine la clustere cu forme arbitrare\\
+$\checkmark$ Gaseste automat numarul optim de clustere, spre deosebire de K-means\\
+$\times$ Densitatile foarte diferite in randul clusterelor pot reprezenta o problema atunci cand se aleg $\epsilon$ si \textit{minPts}\\
+$\times$ Senzitivitate maxima la $\epsilon$ si \textit{minPts}\\
+$\times$ Poate aparea "Blestemul Dimensiunilor Mari" daca spatiul este prea mare\\
+Algoritmul implementat in \textit{Scikit} este cel standard, de complexitate timp $\mathcal{O}(n^2)$, care arata in felul urmator:
+\\
+\textbf{----------------------------------------------------------------------------------------------------------------}\\
+\textbf{Algorim:} DBSCAN\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textbf{\underline{INITIALIZARE}}\\
+\textit{C = 0}\\
+\textit{pentru $i \gets 1,...,n$}
+\par{} \textit{label[i]=undefined}\\
+\textbf{\underline{CORP ITERATIV}}\\
+\textit{pentru $p \gets 1,..,n$} 
+\par{}  \textit{daca label[p] != undefined}
+\par{} \quad  \textit{continua}
+\par{} \textit{$N_\epsilon$[p] = RangeQuery(p)}, \textit{RangeQuery e functia ce returneaza vecinii din raza $\epsilon$}
+\par{} \textit{daca $\vert N_\epsilon[p] \vert < minPts$}
+\par{} \quad \textit{label[p] = noise}
+\par{} \quad \textit{continua}
+\par{} \textit{S = $N_\epsilon$[p]; C=C+1; label[p]=C}
+\par{} \textit{pentru $q \in S$}
+\par{} \quad \textit{daca label[q]} \notin (undefined, noise)
+\par{} \quad \quad \textit{continua}
+\par{} \quad \textit{label[q]=C}
+\par{} \quad  \textit{$N_\epsilon$[q] = RangeQuery(q)}
+\par{} \quad \textit{daca $\vert N_\epsilon[q] \vert$} \geq minPts
+\par{} \quad \quad \textit{S=S \cup $N_\epsilon$[q]}\\
+\textbf{\underline{REZULTAT}}\\
+\textit{Returneaza vectorul labels}\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+Intrebarea ramane cum selectam $\epsilon$ si \textit{minpts}? Mai intai am selectat cei mai apropiati 1\% vecini ai tuturor observatiilor. Pentru fiecare observatie in parte am calculat distanta medie de la ea la toti membrii vecinatatii. Se obtine un vector de distante medii care se aduna si se impart la numarul total de observatii. In acestl fel obtin $\epsilon$. Pentru \textit{minPts} am oferit mai multe valori dintr-un interval, avand deja $\epsilon$ calculat, si am afisat pe un grafic perechile de \textit{(scor Silhouette, minPts)}. Solutia optima este data de varful graficului, cum se observa si in imaginea de mai jos.\\
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=10cm, height=7cm]{images/MinPts.JPG}
+    \caption{Cautarea valorii optime a lui minPts in functie de $\epsilon$ gasit deja}
+    \label{fig:minPts}
+\end{figure}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=14cm, height=10cm]{images/DBSCAN.JPG}
+    \caption{Rezultatul clusterizarii cu DBSCAN (punctele gri reprezinta \textit{Outliers})}
+    \label{fig:DBSCAN}
+\end{figure}
+
+
+Din cele 3 clustere rezultate ne intereseaza acela care cuprinde jucatorii a caror pozitie de final in cadrul unui meci este in medie foarte slaba. In mod evident, aici se vor afla putini competitori din top 10, lucru care ne da posibilitatea de a face o noua separare a datelor. Cu alte cuvinte, clusterele  \textcolor{blizzardblue}{azur} si  \textcolor{green}{verde} sunt combinate in cadrul de date (eng. \textit{DataFrame}) \textit{training\_set\_1} iar cel \textcolor{orange}{portocaliu} (clsuterul slab) formeaza \textit{training\_set\_2}. Primul set e unul echilibrat (eng. \textit{balanced}) iar al doilea este profund inegal (eng. \textit{unbalanced}), avand o majoritate clara de etichete nule (jucatori ce nu au terminat meciul in top 10). Se preteaza acum o analiza supervizata pe 2 module, descrisa in capitolul urmator. La momentul testarii, vom vedea mai intai daca o intrare corespunde clusterului \textcolor{orange}{portocaliu}, caz in care aplicam anumite tehnici, sau celorlalte 2 clustere, caz in care aplicam alte tehnici.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\chapter{Intelgerea datelor si pregatirea lor}
+Am la dispozitie doua seturi de date in format \textbf{CSV}, \textit{train.csv} si \textit{test.csv}. Primul semnifica setul de antrenament iar al doilea setul dat spre testare. Primul pas in vederea unei analize exploratorii il reprezinta intelegerea datelor si a tipurilor acestora. Din punct de vedere ierarhic, putem imparti datele in 2 tipuri, fiecare a cate alte 2 sub-tipuri. Imaginea urmatoare suprinde cel mai bine partitionarea despre care voi vorbi in continuare:
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=7cm, height=6cm]{images/TypesOfData.png}
+    \caption{Tipuri de date}
+    \label{fig:my_label}
+\end{figure}
+
+\par{} \textbf{\textit{Categorical Data}} (rom. \textit{date categoriale}) - reprezinta caracteristici, precum genul unei persoane sau limba vorbita de aceasta. Datele categoriale pot lua si valori numerice (ex. 1-limba engleza, 2-limba romana), dar fara a avea vreun sens matematic.
+\par{} \par{} \quad 1) \textbf{\textit{Nominale}} - valori discrete care pot fi privite drept etichete (eng. \textit{labels}) \par{} \par{} \quad (ex. sexul unei persoane)
+\par{} \par{} \quad 1) \textbf{\textit{Ordinale}} - aceeasi semnificatie ca la cele nominale, diferenta fiind ca ordinea  \par{} \par{} \quad  conteaza. (ex. satisfactia unui client pe o scara de la 1 la 10)
+
+\par{} \textbf{\textit{Numerical Data}} (rom. \textit{date numerice}) - pot fi discrete, deci numarabile, sau continue, adica masurabile. Datele numerice sunt cele mai intalnite tipuri in practica.
+\\
+\par{} Voi descrie acum informatiile pe care le-am obtinut in urma analizei celor 2 seturi de date \textit{train.csv} si \textit{test.csv}.:
+
+\begin{description}[font=$\bullet$~\normalfont\scshape]
+\item 80.000 de observatii per set
+\item 21 de coloane numerice continue per set
+\item 1 coloana categoriala nominala per set
+\item 3 coloane cu valori unice per set
+\item 1 coloana numerica continua ce semnifica atributul de iesire (evident, aceasta nu se regaseste in \textit{train.csv} intrucat trebuie prezisa)
+\end{description}
+
+\section{Operatii de preprocesare}
+Intrucat multe dintre coloanele seturilor de date sunt irelevante, o mare parte dintre observatii nu corespund cerintelor acestui proiect iar in celulele care alcatuiesc tabelele \textbf{CSV} se regasesc si valori lipsa sau nedefinite, este nevoie de o "curatare" (eng. \textit{data cleansing}). In acest sens, am hotarat sa \textbf{\textit{elimin intrarile care au pe cel putin o celula in care valoarea lipseste}}. De asemenea, imi pastrez doar observatiile care sunt de tipul \textbf{\textit{solo sau solo-fpp}}, meciurile de echipa nefiind de interes. Totodata, scot coloanele care din punct de vedere logic nu imi ofera informatii relevante. Ele sunt fie atribute specifice echipelor, fie atribute cu caracter unic neinformativ. O alta problema e prezentata de coloana de iesire a carei valori sunt subunitare, motiv pentru care e nevoie de o conversie.
+
+\begin{minted}{python}
+df = pd.read_csv(r"C:\Users\Tudor\Desktop\Licenta2020\train.csv")
+new_df = df.dropna()    
+new_df = new_df[new_df.columns][(new_df['matchType'] == 'solo-fpp') 
+                                 | (new_df['matchType'] == 'solo')]
+new_df = new_df.drop(["Id", "groupId", "matchId", "killPoints", 
+"matchType", "numGroups", "rankPoints", "teamKills", "DBNOs",
+"maxPlace", "revives", "vehicleDestroys", "winPoints", "assists"],
+axis = 1)
+new_df['winPlacePerc'] = 100 - 
+                         (new_df['winPlacePerc'] * 100).astype('int32') + 1
+new_df.drop(new_df[(new_df['winPlacePerc'] < 1) | 
+           (new_df['winPlacePerc'] > 100)].index, inplace = True)
+\end{minted}
+
+\section{Eliminarea valorilor aberante}
+In descrierea seturilor de pe \textit{Kaggle} se mentioneaza ca pentru coloanele \textit{'damageDealt', 'longestKill', 'walkDistance' si 'weaponsAcquired'} au fost observate si valori aberante, datorate \textit{hacker-ilor} (rom. trisori). Pentru a elimina aceste situatii folosesc metoda \textbf{\textit{intervalului dintre cuantile}}.
+\par{} \par{} Prima data, pentru fiecare coloana enumerata mai sus, se calculeaza diferenta dintre cunatila 3 (granita pana unde se afla 75\% din date) si cuantila 1 (granita pana unde se afla 25\% din date) IQR=Q3-Q1. Mai apoi construiesc captele de interval : [Q1-3*IQR, Q3+3*IQR]. Intrarile specifice valorilor atributelor, abia mentionate, care depasesc intervalul sunt sterse.
+\par{} \par{} Desi in mod normal se lucreaza cu regula de 1.5*IQR, am ales-o pe cea cu 3*IQR din dorinta de a fi mai putin punitiv cu datele. Daca as fi pastrat 1.5*IQR riscam sa elimin multe observatii din top 10, lucru de nedorit intrucat avem un set de antrenament foarte \textit{inbalanced} (rom. inegal). Desigur, acum s-ar putea spune ca exista sanse mult mai mari sa fi pastrat \textit{hackeri}. Un lucru adevarat, dar acest impediment nu incurca prea mult deoarece numarul de \textit{hackeri} este unul relativ mic, deci eliminarea doar acelor cazuri extreme este una convenabila.
+
+\section{Alegerea subsetului optim de atribute}
+O problema universala cu care se confrunta orice inginer pe parcursul unei analize exploratorii este selectarea acelor caracteristici (eng. \textit{features}) care sunt cu adevarat relevante si eliminarea celor redundante sau inutile. Intre \textbf{redundanta} si \textbf{inutilitate} exista o diferenta majora deoarece putem avea atribute utile, dar redundante in raport cu altele, in timp ce atributele inutile nu reflecta nimic (ex. coloanele eliminate la \ref{fig:my_label} ).
+\par{} \par{} Avantajele pastrarii numai a acelor caracteristici relevante sunt:
+
+\begin{description}[font=$\bullet$~\normalfont\scshape]
+\item \textit{simplificarea modelului pentru a fi mai bine interpretat}
+\item \textit{durata antrenarii mai scurta}
+\item \textit{evitarea blestemului dimensiunilor (eng. \textit{Curse of Dimensionality, desi aici nu este cazul}})
+\item \textit{generalizarea modelelor, fiind mai specifice contextului problemei si nu datelor existene}
+\item \textbf{\textit{Occam's razor}} \textit{afirma ca ne dorim modele simple si inteligibile, proprietati pe care le pierdem cu un numar mare de caracteristici (eng. \textit{features})}.
+\end{description}
+ Metodele de \textit{feature selection} pot fi impartite in 3 categorii: \textbf{\textit{Metode Filter}}, \textbf{\textit{Metode Wrapper}}, \textbf{\textit{Metode Embedded}}. In cadrul unui proiect de analiza ele pot fi intercalate in functie de ce dorim sa obtinem. Nu exista nicio recomandare empirica cu privire la practici bune (eng. \textit{best practices}) cand vine vorba de astfel de metode, dar in urma unei analize s-au facut urmatoarele observatii:
+
+
+
+\begin{center}
+\begin{table}[h]
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Metode Filter}                                                                                                         & \textbf{Metode Wrapper}                                                                                                                                        & \textbf{Metode Embedded}                                                                                                                 \\ \hline
+\begin{tabular}[c]{@{}l@{}}Metode care \\ nu incorporeaza \\ algoritmi specifici de \\ invatare automata\end{tabular} & \begin{tabular}[c]{@{}l@{}}Evaluate pe un algoritm \\ de invatare automata,\\ cauta in mod greedy\\ un subset optim de \\ caracteristici\end{tabular} & \begin{tabular}[c]{@{}l@{}}Scoruri calculate \\ pentru caracteristici \\ incorporate in \\ cadrul algoritmilor\end{tabular}     \\ \hline
+\begin{tabular}[c]{@{}l@{}} Rapide ca si \\ complexitate timp\end{tabular}                                             & \begin{tabular}[c]{@{}l@{}}Complexitate timp mare \\ pentru un set cu multe\\ caracteristici\end{tabular}                                             & \begin{tabular}[c]{@{}l@{}}Complexitatea timp \\ este undeva intre cea \\ de la metodele Filter \\ si cele Wrapper\end{tabular} \\ \hline
+\begin{tabular}[c]{@{}l@{}}Sanse mici de a \\ face overfitting\end{tabular}                                           & \begin{tabular}[c]{@{}l@{}}Sanse mari de a face \\ overfitting\end{tabular}                                                                           & \begin{tabular}[c]{@{}l@{}}In general, \\ reduce overfitting-ul\end{tabular}                                                    \\ \hline
+\begin{tabular}[c]{@{}l@{}}Exemple: Corelatia, \\ testul Chi-Square,\\ ANOVA\end{tabular}                             & \begin{tabular}[c]{@{}l@{}}Exemple: \\ Eliminare Recursiva \\ de Caracteristici\end{tabular}                                                          & \begin{tabular}[c]{@{}l@{}}Exemple: Random Forest\\ , Regresie Lasso\end{tabular}                                               \\ \hline
+\end{tabular}
+\end{table}
+\end{center}
+
+In cadrul acestei proiect am folosit o metoda Filter: \textit{Corelatia} si o metoda Embedded: \textit{scorurile caracteristicilor (feature-urilor) dintr-o Random Forest.}
+
+\subsection{Corelatia}
+Corelatia este o relatie statistica dintre 2 variabile aleatoare care ne poate explica gradul de legatura dintre cele 2 (ex. relatia dintre pretul unui produs si numarul de oameni dispusi sa il cumpere). Intervalul din care corelatia poate lua valori este [-1, 1]. Valorile pozitive semnifica o crestere simultana pe axe, cele negative o crestere a unei variabile sustinuta de o scadere a celeilalte iar valorile apropiate de 0 indica o dispersie foarte mare. Cele 3 tipuri sunt prezentate intuitiv in imaginile de mai jos: 
+
+\begin{figure}[h!]
+    \centering
+    \subfigure[a]{\includegraphics[width=0.24\textwidth]{images/PositiveCorrelation.png}} 
+    \subfigure[b]{\includegraphics[width=0.24\textwidth]{images/NegativeCorrelation.png}} 
+    \subfigure[c]{\includegraphics[width=0.24\textwidth]{images/NoCorrelation.png}} 
+    \caption{(a) Corelatie pozitiva (b) Corelatie negativa (c) Fara corelatie }
+    \label{fig:corelatii}
+\end{figure}
+
+
+
+Un aspect important este acela ca \textbf{corelatia nu implica cauzalitate}! In informatica, daca doua variabile de intrare sunt strans corelate, ne dorim sa o eliminam pe una din ele intrucat aceea este \textbf{redundanta}. Asadar, planul ar fi sa analizam corelatiile dintre atributele de intrare iar din perechea cu o corelatie in modul mai mare de 0.8 sa eliminam atributul cu o mai slaba legatura fata de coloana de iesire. Pragul de 0.8 a fost ales in mod empiric. Iata o vizualizare grafica, la prima vedere, a tuturor corelatiilor:
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=12cm, height=8.6cm]{images/Correlation.JPG}
+    \caption{Tipuri de date}
+    \label{fig:my_label}
+\end{figure}
+
+\subsection{Selectia de caracteristici cu Random Forest}
+Asa cum reise din tabelul de la pagina 13, metodele \textit{Filter} par sa fie cele mai echilibrate din punct de vedere al timpului de executie si al overfitting-ului. Totusi, acestea nu ofera in general informatii cu privire la \textbf{contributia} caracteristicilor, spre deosebire de metodele \textit{Embedded} care generalizeaza bine iar scorurile atribuite feature-ilor sunt usor de interpretat. De exemplu, un feature a carui corelatie cu coloana de iesire este mare nu inseamna neaparat ca va juca un rol esential in cadrul unui algoritm de invatare automata. Asadar, importanta poate fi reflectata de un algoritm precum \textit{\textbf{Random Forest}}. Acesta este un ansamblu de arbori de decizie, in nodurile carora sunt plasate atribute pentru care se calculeaza scoruri astfel: \\
+\textbf{-----------------------------------------------------------------------------------------------------------------}\\
+\textit{pentru fiecare arbore din ansamblu}
+\par{} $node\_imp[i] = w[i]*H[i]-w[left(i)]*H[left(i)] -w[right(i)]*H[right(i)]$ \textit{unde}:
+\par{} \quad \checkmark \textit{node\_imp[i] = importanta nodului i}
+\par{} \quad \checkmark \textit{w[i] = cate observatii ajung la nodul i impartit la numarul total de observatii}
+\par{} \quad \checkmark \textit{H[i] = entropia nodului i} 
+\par{} $feature\_imp[f] = \frac{\sum_{i \in all nodes that split on f}node\_imp[i]}{\sum_{k \in all nodes}node\_imp[k]}, \forall f \in all features$
+\\
+\par{} $normalised(feature\_imp[f]) = \frac{feature\_imp[f]}{\sum_{j \in all feature}feature\_imp[j]}$ \\ 
+\\
+$RF\_feature\_imp[f] = \frac{\sum_{j \in all trees} normalised(feature\_imp[f])}{T}$
+\par{} \checkmark \textit{T = numarul total de arbori din ansamblu}
+\\
+\textbf{-----------------------------------------------------------------------------------------------------------------}
+\\
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=10cm, height=5.67cm]{images/RandomForestFeatureSelection.JPG}
+    \caption{Scorurile feature-urilor din \textbf{train.csv}, calculate de Random Forest}
+    \label{fig:my_label}
+\end{figure}
+
+\subsection{Standardizare}
+Un alt aspect important il reprezinta scalarea caracteristicilor (eng. \textit{Feature Scaling}). In majoritatea cazurilor, unitatile de masura ale atributelor sunt diferite, motiv pentru care magnitudinile observatiilor sunt foarte variate. De exemplu, greutatea unei persoane ia valori, in general, de la 4 la 100 de kilograme in timp ce aceeasi greutate in grame poate fi si de 1000 de ori mai mare ca magnitudine. Algoritmii de invatare automata care calculeaza distante euclidiene sau realizeaza \textit{Gradient Descent} au nevoie de scalare. In cazul distantelor, caracteristicile cu o magnitudine mare au o pondere mai semnificativa in momentul realizarii calculului, problema aceasta fiind rezolvata de scalare. De asemenea, in cazul \textit{Gradient Descent-ului}, pocesul de "coborare" este mai rapid.
+\par{} In literatura de specialitate, se face distinctia intre 2 moduri generale de a face \textit{Feature Scaling}: \textbf{Standardizare} si \textbf{Normalizare}. Normalizarea scaleaza caracteristicile in asa fel incat ele sa aiba valori cuprinse in intervalul [0, 1]. Standardizarea scaleaza caracteristicile pe baza distributiei normale, fiecare \textit{feature} avand in final o medie de $\mu = 0$ si deviatia standard $\sigma = 1$. Empiric, a fost stabilit ca cea de-a doua metoda functioneaza in practica mai bine.
+\par{} Transformarea pe care o voi realiza in cadrul acestei lucrari este una de standardizare, numita \textit{Yeo-Johnson}. Facand parte din familia de transformari parametrice monotone, \textit{Yeo-Johnson} incearca sa si mapeze datele intr-o distributie normala, cu scopul de a reduce varianta si a minimza skewness. Aceasta mapare se va dovedi utila ulterior, atunci cand voi aplica algoritmul \textbf{Naive Bayes} care face prezumtia ca variabilele de intrare urmeaza o distributie Gaussiana. De asemenea, standardizarea este de folos si urmatorului sub-capitol, de diminuare a dimensiunilor, tehnica folosita acolo avand nevoie de scalarea atributelor. Iata transformarea \textit{Yeo-Johnson}, formulata matematic:
+
+  \[
+    x_i^\lambda=\left\{
+                \begin{array}{lll}
+                  [(x_i+1)^\lambda - 1]/\lambda, \quad \quad \quad \quad \quad \quad \lambda \neq 0, x_i \geq 0\\
+                  ln(x_i+1), \quad \quad \quad \quad \quad \quad \quad \quad \quad  \lambda = 0, x_i \geq 0\\
+                  -[(-x_i+1)^{2-\lambda} - 1]/(2-\lambda), \quad \lambda \neq 2, x_i < 0\\
+                  -ln(-x_i+1), \quad \quad  \quad \quad \quad \quad \quad  \lambda = 2, x_i < 0
+                \end{array}
+              \right.
+  \]
+  
+  Transformarea e parametrizata de $\lambda$ care se obtine prin estimarea probabilitatii maxime (eng. \textit{maximum likelihood estimation}). Iata cum arata histogramele datelor inainte si dupa standardizare.
+
+
+\subsection{Diminuarea dimensiunilor}
+\label{subsec: diminuare}
+Pentru a face trecerea la analiza \textit{nesupervizata}, este nevoie de reducerea dimensionalitatii setului de antrenament. Avand 12 caracteristici ramase, dupa operatiile de mai sus, vizualizarea lor pe un grafic (eng. \textit{plot}) este imposibila. Din acest motiv, ne dorim o diminuare a spatiului in 3 dimensiuni sau 2 dimensiuni. Exista numeroase variante de a realiza astfel de operatii iar cea pe care am ales-o este bazata pe \textit{\textbf{clusterizare ierarhica aglomerativa}}. Diferenta majora va fi ca pe dendograma, in locul observatiilor, se vor afla caracteristicile setului de antrenament. Algoritmul este unul relativ simplu:  
+-----------------------------------------------------------------------------------------------------------------\\
+\textbf{\underline{INITIALIZARE}}
+\par{} $\rightarrow$ Fiecare caracteristica este initial cluster \textit{singleton}\\
+\textbf{\underline{CORP ITERATIV}}
+\par{} $\rightarrow$ Se calculeaza distantele dintre clustere confrom unei metrici (ex. \textit{Ward-linkage})
+\par{} $\rightarrow$ Se unesc clusterele care au distanta minima intre ele, formand un nou cluster
+\par{} $\rightarrow$ Pasii anteriori sunt reluati pana cand se ajunge la un singur cluster\\
+\textbf{\underline{INTERPRETARE}}
+\par{} Dendograma obtinuta este taiata cu o linie verticala imaginara, incepand de la primul nivel, decupand astfel numarul de clustere dorit.\\
+-----------------------------------------------------------------------------------------------------------------\\
+Uniunea finala dintre atributele ce alcatuiesc un cluster intr-o noua componenta globala se realizeaza facand media aritmetica, ca in exemplul urmator:\\
+----------------------------  \quad \quad \quad ----------------------------\\ 
+|Feature1|Feature2|            \quad \quad  |Feature1\&Feature2|   \\ 
+----------------------------  \quad \quad \quad ----------------------------\\
+|  \quad   1 \quad    |   \quad 2 \quad \quad \quad $\rightarrow$ \quad \quad \quad \quad| 1.5 | \\
+----------------------------  \quad \quad \quad ----------------------------\\
+|  \quad   1 \quad    |   \quad 2 \quad \quad \quad $\rightarrow$ \quad \quad \quad \quad| 1.5 |\\
+----------------------------  \quad \quad \quad ----------------------------\\
+|  \quad   1 \quad    |   \quad 3 \quad \quad \quad $\rightarrow$ \quad \quad \quad \quad| 2.0 |\\
+----------------------------  \quad \quad \quad ----------------------------\\
+Am ales acesta metoda, cunoscuta in modulul sci-kit drept \textit{Feature Agglomeration}, intrucat este rapida din punct de vedere computational, se pliaza foarte bine pe caracteristici deja scalate la aceeasi unitate de masura si este usor de interpretat. In cadrul proiectului, ierarhia de \textit{feature-uri} poate fi vizualizata:
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=10cm, height=7cm]{images/FeatureAgglomeration.JPG}
+    \caption{Ierarhia de caracteristici}
+    \label{fig:dendograma}
+\end{figure}
+\\
+Se observa ca daca as face o singura taietura, as ramane cu 2 componente, una \textit{singleton} si alta cu restul atributelor. Prin urmare, din dorinta de avea un grad de informatie mai ridicat, aleg sa fac retezarea dubla. De mentionat este si metrica \textbf{Ward}, fara de care dendograma era una cu totul diferita. Similaritatea de tip Ward penalizeaza componentele dense, incercand mai intai sa grupeze clusterele cu putine elemente pentru a reduce sansele ca la o prima taiere a arborerlui ierarhizat sa obtinem clustere \textit{singleton}. Altfel spus, Ward evita formarea clusterelor elipsoide.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\graphicspath{ {images/} }
+\chapter{Planul de lucru}
+
+In cadrul platformei Kaggle \cite{Kaggle} se regaseste o competitie deschisa numita \textbf{\textit{"PUBG Finish Placement Prediction"}} \cite{PUBG}, ce are drept scop predictia locului pe care un jucator va termina un meci, in functie de diferiti parametri din cadrul partidei. Intrucat exista mai multe moduri de joc (\textit{solo}, \textit{duo}, \textit{echipa de 3}, \textit{echiap de 4}), seturile de date de care dispun contin statistici pentru toate tipurile enuntate intre paranteze. Ma voi concentra doar asupra meciurilor \textit{solo} (eng. \textit{single-player}), incercand sa prezic cine va ajunge in primii 10 si cine nu. Atat setul de antrenament original cat si cel de test original contin milioane de interogari. Am ales sa le esantionez pe ambele, construind 2 seturi auxiliare, fiecare a cate 80.000 de intrari si 29 (28 + coloana de iesire) respectiv 28 de coloane.
+
+\section{Metodologia CRSIP-DM}
+
+Metodologia pe care o voi folosi la acest proiect este \textbf{\textit{Cross-Industry Standard Process For Data Mining(CRSIP-DM)}}, standardul din industrie in materie de proiecte ce vizeaza lucrul cu date. Modelul surpinde ciclul de viata al unui produs analitic ca al meu, nefiind foarte restrictiv cu privire la etapele pe care trebuie sa le urmez. 
+
+\begin{figure}
+    \centering
+    \includegraphics[width=5cm, height=3.1cm]{CRISP-DM.jpg}
+    \caption{Etapele CRSIP-DM}
+    \label{fig:my_label}
+\end{figure}
+
+\quad Dupa cum se poate observa, exista sageti duble intre anumite procese, indicand posibilitatea de revenire la etapa anterioara si de reluare a acesteia. Metodologia poate fi considerata costisitoare, dar ofera avantajul esential: un proiect cu o acuratete mult mai mare. CRISP-DM face, asadar, un compromis (eng. \textit{trade-off}) cost-acuratete.
+\par{} \quad Prezint acum o scurta descriere a etapelor si cum au fost ele integrate de mine:
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item [Business Understanding:] Care este scopul?(predictia top 10), Cui se adreseaza proiectul?(mediului competitiv), Care sunt asteptarile?(un model cu o acuratete cat mai mare), Pot aplica tehnici de invatare automata?(Da, atat invatare supervizata cat si ne-supervizata) 
+\item [Data Understanding:] Cu ce fel de date lucrez? Imi ofera ele o imagine de ansamblu asupra problemei pe care vreau sa o rezolv? In cazul de fata, toate atributele sunt continue iar o mare parte din ele par sa fie relevante pentru un posibil model. De asemenea, numele atributelor sunt foarte clare (damageDealt, kills, heals etc.) iar in lipsa unei descrieri, rolul lor ar putea fi dedus usor.  
+\item [Data Preparation:] Aceasta etapa implica procesele de reducere a dimensiunilor (eng. \textit{Dimensionality Reduction}), selectie a atributelor esentiale (eng. \textit{Feature Selection}) si scalare (eng. \textit{Feature Scaling}). Aici am aplicat tehnici cunoscute precum analiza in perechi a corelatiilor (eng. \textit{pair-wise correlation}), calculul scorurilor atributelor prin \textit{Random Forest} \cite{RandomForest}, scalare si normalizare printr-o transformare non-liniara (Yeo-Johnson) si altele descrise in sectiunile urmatoare.
+\item [Modeling:] Modelarea are la baza aplicarea unor algoritmi de invatare automata pe datele pregatite la etapa anterioara. In cazul acestui proiect, am folosit atat algoritmi nesupervizati (\textit{k-Means, DBSCAN, EM-GMM}) cat si supervizati (\textit{Naive Bayes, Regresie Logistica sau Random Forest}). 
+\item [Evaluation:] Evaluarea este primordiala in orice proiect de invatare automata. Metricile folosite aici ne spun daca modelele antrenate sunt cele bune sau am gresit, caz in care ne intoarcem la prima etapa, cea de Business Understanding. Amintesc aici doar cateva dintre principalele masuratori utilizate: \textit{Precizie, Senzitivitate, ROC, acuratete echilibrata}.
+\item [Deployment:] Refactorizarea codului, ultimele modificari aduse(eng. \textit{last touch}) si livrarea produsului final.
+\end{description}
+
+\section{Planul analizei exploratorii}
+
+Intr-o prima faza, am realizat "curatarea" datelor (eng. \textit{data cleansing}) pentru ca mai apoi sa aplic tehnici de invatare nesupervizata asupra lor. Motivatia este aceea ca in majoritatea proiectelor de analiza se pot identifica sabloane (eng. \textit{patterns}) ce releva informatii necunoscute la prima vedere. Deoarece sunt multe atribute de intrare, a fost nevoie mai intai de o reducerea a dimensionalitatii la 3D, pentru a putea vizualiza rezultatele obtinute de invatarea nesupervizata. Algoritmul nesupervizat care explica cel mai bine datele mele este \textit{DBSCAN}, o metoda de clusterizare foarte cunoscuta, robusta si care se pliaza pe  clustere cu densitati mari.
+\par{} Dupa ce \textit{DBSCAN} a impartit setul de antrenament in 3 grupari, am hotarat sa analizez in detaliu clusterul care in medie avea cel mai slab loc pe care jucatorii l-au ocupat la finalul unui meci. Evident, in acel cluster exista putini competitori care sa fi terminat in top 10. In felul acesta, reusesc sa fac o bipartitionare a datelor, separand clusterul cu o medie slaba de celelalte doua. 
+\par{} Prima partitie, cea slaba, e formata acum dintr-un set de observatii foarte inegal (eng. \textit{unbalanced set}). Aici se regasesc multi jucatori din afara top 10 si putini din top 10. Atunci cand am incercat sa construiesc un arbore de decizie pt clasificare, acesta imi clasa gresit aproape toate etichetele pozitive (competitorii din top 10), dar corect pe cele negative (in afara top 10). Cu alte cuvinte, se producea fenomenul de \textit{underfitting} pe eticheta pozitiva. Problema a fost rezolvata prin \textit{boosting}, mai exact algoritmul \textit{Adaboost}, care a produs o acuratete echilibrata (eng. \textit{balanced accuracy}) buna.
+\par{} A doua partitie contine un set mai echilibrat, motiv pentru care am aplicat tehnici de invatare supervizata specifice: \textit{Regresie Logistica, Random Forest sau Naive Bayes Gaussian}. Cea mai interesanta metoda a fost un hibrid dintre \textit{Naive Bayes Gaussian} si \textit{EM-GMM}. De altfel, aceasta suprinde cea mai buna acuratete echilibrata la testare. Alegerea unui singur algoritm de clasificare este imposibila intrucat fiecare dintre cei enumerati mai sus se comporta specific unui anumit task. Spre exemplu, daca as dori sa  maximizez numarul de jucatori prezisi corect ca fiind in top 10, alegerea potrivita este hibridul dintre \textit{Naive Bayes Gaussian} si \textit{EM-GMM}, dar daca vreau sa maximizez numarul de jucatori prezisi corect ca \textbf{nefiind} in top 10, aleg ceilalti algoritmi. In concluzie, utilizatorul acestui proiect poate alege dintr-o gama variata de algoritmi pe acela care se potriveste cel mai bine cu ce vrea sa obtina, avand drept ghid numeroase metrici de evaluare. 
+
+\section{Masuratori statistice}
+Asa cum am mentionat mai sus, scopul lucrarii de fata nu este de a gasi un algoritm general si robust pentru orice sarcina de lucru, ci mai degraba un ansamblu de metode care sa ofere o viziune clara asupra rezultatelor pe care vrem sa le obtinem. Claritatea este data de \textit{metricile de evaluare} pe care le voi descrie in continuare:
+
+\subsection{Matricea de confuzie}
+Matricea de confuzie (eng. \textit{Confusion Matrix}) este un tabel 2x2, realizat pe setul de test, in care sunt condensate 4 statistici relevante pentru calculul altor metrici. Poate fi vazut drept un tabel auxiliar ce sta la baza oricarei evaluari. Elementele din matrice reprezinta:
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item [TP (eng. \textit{True Positives}):] Numarul de intrari clasificate pozitiv (in top 10) care sunt intr-adevar pozitive.  
+\item [FP (eng. \textit{False Positives}):] Numarul de intrari clasificate pozitiv (in top 10) care in realitate sunt negative.
+\item [FN (eng. \textit{False Negatives}):] Numarul de intrari clasificate negativ (nu sunt in top 10) care in realitate sunt pozitive.
+\item [FN (eng. \textit{True Negatives}):] Numarul de intrari clasificate negativ (nu sunt in top 10) care sunt intr-adevar negative.
+\end{description}
+
+\begin{center}
+\begin{tabular}{l|l|c|c|c}
+\multicolumn{2}{c}{}&\multicolumn{2}{c}{Realitate}&\\
+\cline{3-4}
+\multicolumn{2}{c|}{}&Pozitiv&Negativ&\multicolumn{1}{c}{Total}\\
+\cline{2-4}
+\multirow{2}{*}{Predictie}& Pozitiv & $TP$ & $FP$ & $TP+FP$\\
+\cline{2-4}
+& Negativ & $FN$ & $TN$ & $FN+TN$\\
+\cline{2-4}
+\multicolumn{1}{c}{} & \multicolumn{1}{c}{Total} & \multicolumn{1}{c}{$TP+FN$} & \multicolumn{    1}{c}{$FP+TN$} & \multicolumn{1}{c}{$N$}\\
+\end{tabular}
+\end{center}
+
+\subsection{TPR\&TNR, PPV\&NPV}
+Cele 4 metrici din titlul acestei sub-sectiuni sunt calculate cu ajutorul statisticilor enumerate anterior. Luate pe rand, fiecare inseamna:
+
+\par{} 1) \textbf{\textit{TPR}} = dintre toate intrarile care sunt in realitate pozitive, ce procent sunt prezise corect ca fiind pozitive? \textbf{\textit{TPR}} este acronimul de la \textit{True Positive Rate} si mai este cunoscut in literatura de specialitate drept \textbf{\textit{senzitivitate}} (eng. \textit{sensitivity or recall}). Formula de calcul este:
+\begin{center}
+    $ TPR = \frac{TP}{TP + FN} $    
+\end{center}
+
+\par{} 2) \textbf{\textit{TNR}} = dintre toate intrarile care sunt in realitate negative, ce procent sunt prezise corect ca fiind negative? \textbf{\textit{TNR}} este acronimul de la \textit{True Negative Rate} si mai este cunoscut in literatura de specialitate drept \textbf{\textit{specificacitate}} (eng. \textit{specificity}). Formula de calcul este: 
+\begin{center}
+    $ TNR = \frac{TN}{TN + FP} $
+\end{center}
+\par{} 3) \textbf{\textit{PPV}} = dintre toate intrarile prezise ca fiind pozitive, ce procent sunt cu adevarat pozitive? \textbf{\textit{PPV}} este acronimul de la \textit{Positive predicted value} si mai este cunoscut in literatura de specialitate drept \textbf{\textit{precizie}} (eng. \textit{precision}). Formula de calcul este:
+\begin{center}
+$ PPV = \frac{TP}{TP + FP} $
+\end{center}
+\par{} 4) \textbf{\textit{NPV}} = dintre toate intrarile prezise ca fiind negative, ce procent sunt cu adevarat negative? \textbf{\textit{NPV}} este acronimul de la \textit{Negative predicted value}. Formula de calcul este:
+\begin{center}
+$ NPV = \frac{TN}{TN + FN} $
+\end{center}
+
+Se poate observa ca perechile TPR\&TNR, PPV\&NPV  sunt oarecum redundante la nivel de logica. \textit{Specificacitatea} o pot privi ca o \textit{senzitivitate} pe etichete negative iar \textit{NPV}-ul nu este altceva decat \textit{precizia}, dar pe etichete negative. Modulul \textit{scikit-learn}, pe care l-am folosit in cadrul proiectului, tine cont de aceste redundante la apelul anumitor functii.
+
+\subsection{Acuratetea} Acuratetea este probabil cea mai simpla metrica de evaluare, folosita drept prima-alegere (eng. \textit{first-choice}) atunci cand se doreste o evaluare rapida a unui algoritm:
+\begin{center}
+$ ACC = \frac{TP + TN}{TP + FP + FN + TN} $
+\end{center}
+
+\subsection{Acuratetea echilibrata}
+Acuratetea echilibrata (eng. \textit{balanced accuracy}) este o metrica, derivata de la acuratetea de baza, definita drept media senzitivitatilor obtinute pe cele doua etichete de output. Formula este: 
+\begin{center}
+$ BACC = \frac{senzitivitate + specificacitate}{2} $
+\end{center}
+Avantajul mare este acela ca functioneaza bine pe seturi dezechilibrate (eng. \textit{imbalanced sets}), asa cum e cazul acestei lucrari.
+
+\subsection{Graficul ROC}
+Graficul \textit{Receiver Operating Characteristic} este una dintre cele mai cunoscute tehnici de comparare a unor algoritmi supervizati de invatare automata in vederea stabilirii celui "mai bun". Este bidimensional, pe prima axa aflandu-se valori ale FPR (eng. \textit{False Positive Rate}), tradus ca 1-specificacitatea, iar pe a doua axa avand valori ale senzitivitatii. Intervalul de valori pe ambele axe este, in mod evident, [0, 1].
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=8cm, height=7cm]{images/ROC.png}
+    \caption{Exemplu de grafic ROC}
+    \label{fig:my_label}
+\end{figure}
+
+Curba zimtata albastra surprinde diferite perechi de valori \textit{(FPR, TPR)} care sunt obtinute din mai multe matrici de confuzie ale aceluiasi algoritm. Spre exemplu, clasificatorul \textit{Naive Bayes} categorizeaza o intrare (eng. \textit{sample}) ca fiind pozitiva cu o probabilitate anume. Am putea impune diferite praguri (eng. \textit{tresholds}) pe care intrarile (eng. \textit{the samples}) trebuie sa le depaseasca pentru a fi clasate drept pozitive. Spre exemplu, daca $P(+) = 80\% $ pentru o intrare iar $treshold = 85\%$ atunci intrarea va fi clasificata \textbf{negativ}. Pentru toate tresholdurile generate, obtinem matrici de confuzie diferite a caror \textit{FPR si TPR} constituie un nou punct pe grafic. Dupa ce am epuizat numarul de praguri, unim punctele de pe grafic pentru a obtine curba zimtata albastra. Acelasi lucru il putem face si cu un alt algoritm, obtinand o a doua curba zimtata si urmand ca la final sa calculam ariile suprafetelor cuprinse de cele doua curbe. Empiric, aria mai mare este specifica clasificatorului mai bun.
+\par{} Ca observatie, linia punctata marcheaza locurile unde \textit{TPR = FPR}. De asemenea, daca se doreste aflarea treshold-ului ideal pentru un algoritm, utilizatorul ar trebui sa urmareasca punctul curbei care se apropie cel mai mult de coltul stanga-sus al imaginii. In acel colt, senzitivitatea este maxima, \textit{TPR = 1}, iar FPR este minim, \textit{FPR = 0}.
+
+\subsection{Scorul Silhouette}
+
+Spre deosebire de invatarea supervizata unde metricile sunt calculate in functie de acuratetea predictiilor facute pe coloana iesire, la analiza nesupervizata acest lucru devine imposibil, eticheta de \textit{output} fiind inexistenta. In plus, scopul algoritmilor nesupervizati este de a gasi sabloane explicative cu privire la datele de care dispunem. Prin urmare, metrica ideala ar trebui sa masoare gradul de separare a partitiilor gasite, similaritatea sau diferentele componentelor din cluster etc.
+\par{} \textbf{Scorul Sillhouette} este cel pe care l-am folosit pe tot parcursul proiectului intrucat cuprinde cele 2 proprietati ideale de mai sus. O parte din avantaje si dezavantaje sunt:
+
+\begin{description}[font=$\bullet$~\normalfont\scshape\color{red!50!black}]
+\item Scor usor de interpretat, curpins intre [-1,1], unde -1 semnifica clusterizare incorecta, 1 clusterizare ideala iar 0 marcheaza partitii care se suprapun 
+\item Un scor ridicat indica clustere dense si bine separate
+\item Scorul e de obicei mai mare pentru clustere convexe si mai mic pentru alte tipuri de clustere, precum cele bazate pe densitate
+\end{description}
+
+\begin{center}
+   $s = \frac{b-a}{max(a, b)},$\\
+   $TotalScore = \frac{\sum_{i=1}^{n}s_i}{n},$ \textit{n = nr total de observatii}\\
+   \textit{b = distanta medie dintre o observatie si toate celelalte observatii din cel mai apropiat cluster}\\
+   \textit{a = distanta medie dintre o observatie si toate celelalte observatii din acelasi cluster}
+\end{center}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\chapter*{Introducere} 
+\addcontentsline{toc}{chapter}{Introducere}
+
+\textit{\textbf{Player Unknown BattleGrounds}}, cunoscut drept PUBG, este un joc de lupta de tip arena (eng. \textit{Battle-Royale}) in care un numar de 100 de jucatori concureaza unii impotriva celorlalti iar castigator este acela care "ramane ultimul in viata". Desigur, definitia castigatorului se poate extinde si la echipe, jocul permitand meciuri tot de 100 de jucatori, dar impartiti in echipe de 2, 3 sau 4 coechipieri. In cazul acesta, ultima echipa ramasa in viata este castigatoare. Un meci se desfasoara pe o harta unde participantii isi aleg locatia de start. Acestia trebuie sa gaseasca arme cu care sa ii invinga pe ceilalti. Mai multi jucatori pot avea aceeasi locatie de start, fapt care accelereaza dinamica jocului, unii pierzand chiar din primele minute. Pe parcursul meciului, participantii pot cauta arme mai bune, kit-uri medicale pentru a-si creste viata inapoi la 100 daca au fost atacati, vehicule pentru a se deplasa mai repede pe harta, obiecte care le pot creste acuratetea armelor si multe altele. La prima vedere, elementele care ar putea prezice locul pe care un jucator termina meciul sunt cele enuntate mai sus. Totusi, PUBG este un joc care mizeaza foarte mult pe noroc, cei mai buni jucatori putand fi eliminati aproape involuntar de catre altii. Din acest punct de vedere, predictia reprezinta o adevarata provocare pentru cel care incearca sa gaseasca tipare explicative (eng. \textit{patterns}) ale statisticilor jucatorilor. Se impune astfel o analiza exploratorie a datelor pentru a avea o intelegere (eng. \textit{insight}) mai buna asupra lor. Aceasta analiza ofera mediului competitiv diferite repere si ii ajuta atat pe profesionisti, cat si pe novici sa inteleaga mai bine utilitatea pe care anumite actiuni o ofera. PUBG are in prezent rangul de \textit{joc-sportiv} (eng. \textit{e-Sport}), multe persoane fiind sponsorizate financiar sa se antreneze pentru ca mai apoi sa participe la competitii unde premiile in bani depasesc 1.000.000\$. Popularitatea, expunerea la un public variat, caracterul competitiv-sportiv si interesul firmelor de a sponsoriza jucatori sustin dorinta de a cauta modele explicative ale jocului, implicatiile financiare fiind evidente. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\chapter*{Bibliografie} 
+\addcontentsline{toc}{chapter}{Bibliografie}
+
+\begin{thebibliography}{9}
+\bibitem{Kaggle} 
+\textit{https://www.kaggle.com}
+\bibitem{PUBG} 
+\textit{https://www.kaggle.com/c/pubg-finish-placement-prediction}
+\bibitem{RandomForest}
+\textit{https://www.stat.berkeley.edu/~breiman/randomforest2001.pdf}
+
+
+
+
+
+
+
+
+\bibitem{AdaBoost}
+\textit{https://web.stanford.edu/~hastie/Papers/samme.pdf}
+\end{thebibliography}
+
+
+
+
+
